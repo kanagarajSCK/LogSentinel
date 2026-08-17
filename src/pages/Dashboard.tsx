@@ -3,7 +3,7 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { callEdgeFunction } from '@/lib/supabase';
 import type { SecurityEvent, Incident, BlockedIP, DashboardStats } from '@/types';
-import { Shield, LayoutDashboard, AlertTriangle, Ban, FlaskConical, LogOut, Activity, Trash2, Loader2 } from 'lucide-react';
+import { Shield, LayoutDashboard, AlertTriangle, Ban, FlaskConical, LogOut, Activity, Trash2, Loader2, Menu, X } from 'lucide-react';
 import { Overview } from '@/components/Overview';
 import { IncidentList } from '@/components/IncidentList';
 import { IncidentDetail } from '@/components/IncidentDetail';
@@ -15,6 +15,7 @@ type View = 'overview' | 'incidents' | 'demo' | 'blocked';
 export function Dashboard() {
   const { user, logout } = useAuth();
   const [view, setView] = useState<View>('overview');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [blockedIPs, setBlockedIPs] = useState<BlockedIP[]>([]);
@@ -171,10 +172,13 @@ export function Dashboard() {
 
   return (
     <div className="dashboard">
-      <aside className="sidebar">
+      <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-header">
           <Shield color="#38bdf8" size={24} />
           <span>LogSentinel</span>
+          <button className="mobile-close-btn" onClick={() => setMobileMenuOpen(false)}>
+            <X size={20} />
+          </button>
         </div>
         <nav className="nav">
           {navItems.map((item) => {
@@ -183,7 +187,7 @@ export function Dashboard() {
               <button
                 key={item.key}
                 className={`nav-item ${view === item.key ? 'active' : ''}`}
-                onClick={() => { setView(item.key); setSelectedIncidentId(null); }}
+                onClick={() => { setView(item.key); setSelectedIncidentId(null); setMobileMenuOpen(false); }}
               >
                 <Icon size={18} />
                 {item.label}
@@ -203,8 +207,13 @@ export function Dashboard() {
         </div>
       </aside>
 
+      {mobileMenuOpen && <div className="mobile-overlay" onClick={() => setMobileMenuOpen(false)}></div>}
+
       <div className="main">
         <div className="main-header">
+          <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(true)}>
+            <Menu size={20} />
+          </button>
           <h2>
             {view === 'overview' && 'Security Operations Dashboard'}
             {view === 'incidents' && (selectedIncidentId ? 'Incident Details' : 'Active Incidents')}
