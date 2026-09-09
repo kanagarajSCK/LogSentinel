@@ -29,39 +29,54 @@ export function Dashboard() {
   });
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
 
   const fetchEvents = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('security_events')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(100);
+    if (error) {
+      setDataError(error.message);
+      return;
+    }
     if (data) setEvents(data as SecurityEvent[]);
   }, []);
 
   const fetchIncidents = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('incidents')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(50);
+    if (error) {
+      setDataError(error.message);
+      return;
+    }
     if (data) setIncidents(data as Incident[]);
   }, []);
 
   const fetchBlockedIPs = useCallback(async () => {
-    const { data } = await supabase
-      .from('blocked_ips')
-      .select('*')
-      .order('blocked_at', { ascending: false });
-    if (data) setBlockedIPs(data as BlockedIP[]);
+    try {
+      const result = await callEdgeFunction<{ blocked_ips: BlockedIP[] }>('incident-management', {}, { path: '/blocked-ips' });
+      setBlockedIPs(result.blocked_ips ?? []);
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : 'Unable to load blocked IPs');
+    }
   }, []);
 
   const fetchStats = useCallback(async () => {
-    const { count: total } = await supabase.from('security_events').select('*', { count: 'exact', head: true });
-    const { count: failed } = await supabase.from('security_events').select('*', { count: 'exact', head: true }).eq('login_status', 'FAILED');
-    const { count: success } = await supabase.from('security_events').select('*', { count: 'exact', head: true }).eq('login_status', 'SUCCESS');
-    const { count: active } = await supabase.from('incidents').select('*', { count: 'exact', head: true }).neq('status', 'RESOLVED').neq('status', 'FALSE_POSITIVE');
-    const { count: highRisk } = await supabase.from('incidents').select('*', { count: 'exact', head: true }).in('severity', ['HIGH', 'CRITICAL']).neq('status', 'RESOLVED').neq('status', 'FALSE_POSITIVE');
+    const { count: total, error: totalError } = await supabase.from('security_events').select('*', { count: 'exact', head: true });
+    const { count: failed, error: failedError } = await supabase.from('security_events').select('*', { count: 'exact', head: true }).eq('login_status', 'FAILED');
+    const { count: success, error: successError } = await supabase.from('security_events').select('*', { count: 'exact', head: true }).eq('login_status', 'SUCCESS');
+    const { count: active, error: activeError } = await supabase.from('incidents').select('*', { count: 'exact', head: true }).neq('status', 'RESOLVED').neq('status', 'FALSE_POSITIVE');
+    const { count: highRisk, error: highRiskError } = await supabase.from('incidents').select('*', { count: 'exact', head: true }).in('severity', ['HIGH', 'CRITICAL']).neq('status', 'RESOLVED').neq('status', 'FALSE_POSITIVE');
+    const error = totalError || failedError || successError || activeError || highRiskError;
+    if (error) {
+      setDataError(error.message);
+      return;
+    }
     setStats({
       totalEvents: total ?? 0,
       failedLogins: failed ?? 0,
@@ -235,6 +250,12 @@ export function Dashboard() {
             </button>
           </div>
         </div>
+
+        {dataError && (
+          <div className="alert alert-error dashboard-alert">
+            Dashboard data could not be loaded: {dataError}. Check the Supabase anon key in .env and restart Vite.
+          </div>
+        )}
 
         {showClearConfirm && (
           <div className="modal-overlay" onClick={() => !clearing && setShowClearConfirm(false)}>

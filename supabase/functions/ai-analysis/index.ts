@@ -63,6 +63,7 @@ Deno.serve(async (req: Request) => {
 });
 
 async function callLLM(incident: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
   const apiKey = Deno.env.get("LLM_API_KEY");
   const model = Deno.env.get("LLM_MODEL") || "gpt-4o-mini";
   const apiUrl = Deno.env.get("LLM_API_URL") || "https://api.openai.com/v1/chat/completions";
@@ -77,6 +78,10 @@ async function callLLM(incident: Record<string, unknown>): Promise<Record<string
     detection_reason: incident.detection_reason,
     related_events: evidence.slice(0, 10),
   };
+
+  if (geminiApiKey) {
+    return callGemini(incident, geminiApiKey, Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash", payload);
+  }
 
   if (!apiKey) {
     return ruleBasedAnalysis(incident, "LLM API key not configured");
@@ -120,6 +125,52 @@ Return ONLY valid JSON, no markdown.`;
   } catch (err) {
     console.error("LLM call failed, using rule-based fallback:", err);
     return ruleBasedAnalysis(incident, err instanceof Error ? err.message : "LLM unavailable");
+  }
+}
+
+async function callGemini(
+  incident: Record<string, unknown>,
+  apiKey: string,
+  model: string,
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const systemPrompt = `You are a security analysis engine for an enterprise SIEM system. Analyze the incident evidence and write a concise investigation explanation in plain text. Explain the suspicious behavior, the strongest evidence, and what an analyst should do next. Do not return JSON, markdown, headings, or code fences.`;
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: "user", parts: [{ text: JSON.stringify(payload) }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 500,
+            responseMimeType: "text/plain",
+          },
+        }),
+      },
+    );
+
+    if (!response.ok) throw new Error(`Gemini API returned ${response.status}`);
+
+    const data = await response.json();
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!content) throw new Error("Empty Gemini response");
+
+    return validateAIResponse({
+      summary: `${incident.detection_type} incident analyzed by Gemini`,
+      severity: incident.severity,
+      reasoning: content.trim(),
+      evidence: [`Gemini investigation of ${incident.event_count} related events`],
+      recommended_action: String(incident.recommended_action ?? "Investigate and contain the source IP"),
+      confidence: 0.85,
+    }, incident);
+  } catch (err) {
+    console.error("Gemini call failed, using rule-based fallback:", err);
+    return ruleBasedAnalysis(incident, err instanceof Error ? err.message : "Gemini unavailable");
   }
 }
 

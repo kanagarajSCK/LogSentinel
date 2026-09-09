@@ -26,6 +26,19 @@ Deno.serve(async (req: Request) => {
     const path = url.pathname;
     const body = await req.json().catch(() => ({}));
 
+    // Read the blocklist through the service-role client so the dashboard does
+    // not depend on browser REST credentials for security administration.
+    if (path.endsWith("/blocked-ips")) {
+      const { data, error } = await supabase
+        .from("blocked_ips")
+        .select("*")
+        .order("blocked_at", { ascending: false });
+      if (error) throw error;
+      return new Response(JSON.stringify({ blocked_ips: data ?? [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Update incident status
     if (path.endsWith("/status")) {
       const { incident_id, status, approved_by } = body as { incident_id: string; status: string; approved_by?: string };

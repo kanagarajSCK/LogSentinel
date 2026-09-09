@@ -58,6 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (e.blocked) {
         setBlocked(true);
         setError(e.message);
+      } else if (e instanceof TypeError && e.message === 'Failed to fetch') {
+        setError('Unable to reach Supabase. Confirm the project URL and deploy the auth-verify Edge Function.');
       } else {
         setError(e.message || 'Authentication service unavailable');
       }
